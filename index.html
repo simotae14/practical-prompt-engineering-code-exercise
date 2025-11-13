@@ -1,76 +1,43 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Prompt Library</title>
-  <link rel="stylesheet" href="style.css" />
-  <meta name="description" content="A local prompt library to save, view, copy, and delete your favorite prompts." />
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width,initial-scale=1" />
+	<title>Prompt Library</title>
+	<link rel="stylesheet" href="style.css" />
+	<meta name="description" content="Simple local prompt library" />
 </head>
 <body>
-  <header class="app-header">
-    <h1>Prompt Library</h1>
-    <p class="tagline">Save, organize, and reuse your best prompts.</p>
-    <button id="theme-toggle" class="ghost" aria-label="Toggle light or dark theme" type="button">Switch to Light Theme</button>
-  </header>
+	<header class="app-header">
+		<h1>Prompt Library</h1>
+		<p class="tagline">Store and manage your favorite AI prompts locally.</p>
+	</header>
 
-  <main class="app-main" id="app" role="main">
-    <section class="panel" aria-labelledby="create-heading">
-      <h2 id="create-heading">Create Prompt</h2>
-      <form id="prompt-form" novalidate>
-        <div class="form-group">
-          <label for="prompt-title">Title <span aria-hidden="true" class="req">*</span></label>
-          <input id="prompt-title" name="title" type="text" maxlength="120" required placeholder="e.g. Blog Outline Generator" />
-          <small class="hint" id="title-hint">Keep it short and descriptive.</small>
-        </div>
-        <div class="form-group">
-          <label for="prompt-content">Content <span aria-hidden="true" class="req">*</span></label>
-          <textarea id="prompt-content" name="content" rows="6" required placeholder="Enter the full prompt here..."></textarea>
-        </div>
-        <div class="actions">
-          <button type="submit" id="save-btn" disabled>Save Prompt</button>
-          <button type="reset" id="reset-btn" class="secondary" aria-label="Clear form">Reset</button>
-        </div>
-      </form>
-    </section>
+	<main class="app-main">
+		<section class="panel">
+			<form id="prompt-form" autocomplete="off" novalidate>
+				<div class="field-group">
+					<label for="prompt-title">Title</label>
+					<input id="prompt-title" name="title" type="text" placeholder="e.g. Summarize Article" required maxlength="120" />
+				</div>
+				<div class="field-group">
+					<label for="prompt-content">Content</label>
+					<textarea id="prompt-content" name="content" rows="6" placeholder="Enter the full prompt text..." required></textarea>
+				</div>
+				<button id="save-prompt" type="submit" class="primary-btn">Save Prompt</button>
+			</form>
+		</section>
 
-    <section class="panel" aria-labelledby="library-heading">
-      <div class="panel-header">
-        <h2 id="library-heading">Your Prompts</h2>
-        <div class="toolbar">
-          <input type="search" id="search" placeholder="Search title or content" aria-label="Search prompts" />
-          <button id="export-btn" class="ghost" title="Export all prompts as JSON" aria-label="Export prompts">Export</button>
-          <input type="file" id="import-file" accept="application/json" hidden />
-          <button id="import-btn" class="ghost" title="Import prompts from JSON" aria-label="Import prompts">Import</button>
-        </div>
-      </div>
-      <div id="empty-state" class="empty" hidden>
-        <p>No prompts saved yet. Add your first prompt above.</p>
-      </div>
-      <div id="prompt-list" class="prompt-list" aria-live="polite"></div>
-    </section>
-  </main>
+		<section class="list-section">
+			<h2 class="section-title">Saved Prompts</h2>
+			<div id="prompt-list" class="prompt-list" aria-live="polite"></div>
+			<p id="empty-state" class="empty-state" hidden>No prompts saved yet. Add one above to get started.</p>
+		</section>
+	</main>
 
-  <footer class="app-footer">
-    <p>Data stored locally in your browser. No server required.</p>
-  </footer>
-
-  <template id="prompt-card-template">
-    <article class="prompt-card" data-id="">
-      <header class="prompt-card-header">
-        <h3 class="prompt-title"></h3>
-        <div class="prompt-meta">
-          <time class="timestamp" title="Saved date"></time>
-        </div>
-      </header>
-      <pre class="prompt-content"></pre>
-      <div class="card-actions">
-        <button class="copy-btn" title="Copy prompt" aria-label="Copy prompt">Copy</button>
-        <button class="delete-btn danger" title="Delete prompt" aria-label="Delete prompt">Delete</button>
-      </div>
-    </article>
-  </template>
-
-  <script src="script.js" defer></script>
+	<footer class="app-footer">
+		<small>Data persists locally in your browser via <code>localStorage</code>.</small>
+	</footer>
+	<script src="script.js" defer></script>
 </body>
 </html>
