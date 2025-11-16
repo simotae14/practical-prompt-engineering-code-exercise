@@ -94,6 +94,25 @@ input[type=text]:focus, textarea:focus { outline:2px solid var(--accent); outlin
 .prompt-title { font-size:1rem; font-weight:600; margin:0; letter-spacing:.3px; }
 .prompt-preview { margin:0; color: var(--text-secondary); font-size:.85rem; line-height:1.35; min-height:2.3em; }
 
+/* Rating Component */
+.rating { display:flex; gap:4px; align-items:center; }
+.star-btn {
+	background:none;
+	border:none;
+	padding:2px;
+	margin:0;
+	font-size:1.15rem;
+	line-height:1;
+	cursor:pointer;
+	color:#c4ced8;
+	transition: color .15s ease, transform .15s ease;
+}
+.star-btn.filled { color:#ffb400; }
+.star-btn:hover, .star-btn:focus { outline:none; color:#ffc94d; transform:scale(1.2); }
+.rating:focus-within .star-btn[aria-checked="true"] { outline:2px solid var(--accent); outline-offset:2px; border-radius:4px; }
+.star-btn:active { transform:scale(1.05); }
+.rating-label { font-size:.65rem; font-weight:600; letter-spacing:.5px; color: var(--text-secondary); text-transform:uppercase; margin-right:4px; }
+
 .card-actions { display:flex; justify-content:space-between; align-items:center; margin-top:auto; }
 .delete-btn {
 	background: var(--danger);

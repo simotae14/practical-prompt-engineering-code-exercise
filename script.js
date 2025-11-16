@@ -40,6 +40,8 @@
 		emptyStateEl.hidden = true;
 		const frag = document.createDocumentFragment();
 		prompts.forEach(p => {
+			// Backwards compatibility: ensure userRating field exists
+			if (typeof p.userRating !== 'number') p.userRating = 0;
 			const card = document.createElement('article');
 			card.className = 'prompt-card';
 			card.dataset.id = String(p.id);
@@ -51,6 +53,26 @@
 			const preview = document.createElement('p');
 			preview.className = 'prompt-preview';
 			preview.textContent = wordPreview(p.content || '');
+
+			// Rating component
+			const ratingWrap = document.createElement('div');
+			ratingWrap.className = 'rating';
+			ratingWrap.setAttribute('role','radiogroup');
+			ratingWrap.setAttribute('aria-label','Rate prompt effectiveness');
+			ratingWrap.dataset.id = String(p.id);
+			for (let i=1;i<=5;i++){
+				const starBtn = document.createElement('button');
+				starBtn.type = 'button';
+				starBtn.className = 'star-btn' + (i <= p.userRating ? ' filled' : '');
+				starBtn.textContent = '★';
+				starBtn.dataset.star = String(i);
+				starBtn.dataset.id = String(p.id);
+				starBtn.setAttribute('role','radio');
+				starBtn.setAttribute('aria-label', i + ' star' + (i === 1 ? '' : 's'));
+				starBtn.setAttribute('aria-checked', i === p.userRating ? 'true' : 'false');
+				starBtn.tabIndex = i === 1 ? 0 : -1;
+				ratingWrap.appendChild(starBtn);
+			}
 
 			const actions = document.createElement('div');
 			actions.className = 'card-actions';
@@ -65,6 +87,7 @@
 			actions.appendChild(deleteBtn);
 			card.appendChild(title);
 			card.appendChild(preview);
+			card.appendChild(ratingWrap);
 			card.appendChild(actions);
 			frag.appendChild(card);
 		});
@@ -73,7 +96,7 @@
 
 	const addPrompt = (title, content) => {
 		const prompts = getPrompts();
-		prompts.unshift({ id: Date.now(), title: title.trim(), content: content.trim() });
+		prompts.unshift({ id: Date.now(), title: title.trim(), content: content.trim(), userRating: 0 });
 		savePrompts(prompts);
 		renderPrompts();
 	};
@@ -100,13 +123,54 @@
 	});
 
 	// Event delegation for delete buttons
+	// Event delegation for delete & rating
 	listEl.addEventListener('click', (e) => {
 		const target = e.target;
-		if (target instanceof HTMLElement && target.dataset.action === 'delete') {
+		if (!(target instanceof HTMLElement)) return;
+		if (target.dataset.action === 'delete') {
 			const id = target.dataset.id;
 			deletePrompt(id);
+			return;
+		}
+		if (target.classList.contains('star-btn')) {
+			const id = target.dataset.id;
+			const star = Number(target.dataset.star);
+			if (!id || !star) return;
+			setRating(id, star);
 		}
 	});
+
+	// Keyboard navigation for rating (left/right arrows)
+	listEl.addEventListener('keydown', (e) => {
+		const target = e.target;
+		if (!(target instanceof HTMLElement) || !target.classList.contains('star-btn')) return;
+		if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+		const id = target.dataset.id;
+		const current = Number(target.dataset.star);
+		if (!id || !current) return;
+		let next = current;
+		if (e.key === 'ArrowRight') next = Math.min(5, current + 1);
+		else if (e.key === 'ArrowLeft') next = Math.max(1, current - 1);
+		if (next !== current) {
+			setRating(id, next);
+			// Move focus to new star after re-render
+			requestAnimationFrame(() => {
+				const card = listEl.querySelector('.prompt-card[data-id="' + id + '"]');
+				const newStar = card?.querySelector('.star-btn[data-star="' + next + '"]');
+				newStar?.focus();
+			});
+		}
+	});
+
+	const setRating = (id, value) => {
+		if (value < 1 || value > 5) return;
+		const prompts = getPrompts();
+		const prompt = prompts.find(p => String(p.id) === String(id));
+		if (!prompt) return;
+		prompt.userRating = value;
+		savePrompts(prompts);
+		renderPrompts();
+	};
 
 	// Initial render
 	document.addEventListener('DOMContentLoaded', renderPrompts);
