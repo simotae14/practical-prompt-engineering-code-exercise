@@ -2,8 +2,151 @@
 // Stores data in localStorage under a single key.
 (function(){
 	const STORAGE_KEY = 'promptLibrary.prompts';
+
+	// ===== METADATA TRACKING SYSTEM =====
+
+	/**
+	 * Estimate token count from text
+	 * @param {string} text - The text to estimate tokens for
+	 * @param {boolean} isCode - Whether the text is code
+	 * @returns {Object} Token estimate with min, max, and confidence
+	 */
+	const estimateTokens = (text, isCode = false) => {
+		if (typeof text !== 'string') {
+			throw new Error('Text must be a string');
+		}
+
+		const words = text.trim().split(/\s+/).filter(Boolean);
+		const wordCount = words.length;
+		const charCount = text.length;
+
+		// Base calculation
+		let min = Math.round(0.75 * wordCount);
+		let max = Math.round(0.25 * charCount);
+
+		// Apply code multiplier
+		if (isCode) {
+			min = Math.round(min * 1.3);
+			max = Math.round(max * 1.3);
+		}
+
+		// Determine confidence level
+		const avgTokens = (min + max) / 2;
+		let confidence;
+		if (avgTokens < 1000) {
+			confidence = 'high';
+		} else if (avgTokens <= 5000) {
+			confidence = 'medium';
+		} else {
+			confidence = 'low';
+		}
+
+		return { min, max, confidence };
+	};
+
+	/**
+	 * Validate ISO 8601 date string
+	 * @param {string} dateString - Date string to validate
+	 * @returns {boolean} Whether the date is valid
+	 */
+	const isValidISODate = (dateString) => {
+		if (typeof dateString !== 'string') return false;
+		const date = new Date(dateString);
+		return date instanceof Date && !isNaN(date.getTime()) && dateString === date.toISOString();
+	};
+
+	/**
+	 * Track model metadata for a prompt
+	 * @param {string} modelName - Name of the AI model
+	 * @param {string} content - The prompt content
+	 * @returns {Object} Metadata object with model, timestamps, and token estimate
+	 */
+	const trackModel = (modelName, content) => {
+		// Validate model name
+		if (typeof modelName !== 'string' || modelName.trim().length === 0) {
+			throw new Error('Model name must be a non-empty string');
+		}
+		if (modelName.length > 100) {
+			throw new Error('Model name must not exceed 100 characters');
+		}
+
+		// Validate content
+		if (typeof content !== 'string') {
+			throw new Error('Content must be a string');
+		}
+
+		const now = new Date().toISOString();
+		const tokenEstimate = estimateTokens(content, false);
+
+		return {
+			model: modelName.trim(),
+			createdAt: now,
+			updatedAt: now,
+			tokenEstimate
+		};
+	};
+
+	/**
+	 * Update timestamps in metadata
+	 * @param {Object} metadata - Existing metadata object
+	 * @returns {Object} Updated metadata object
+	 */
+	const updateTimestamps = (metadata) => {
+		if (!metadata || typeof metadata !== 'object') {
+			throw new Error('Metadata must be a valid object');
+		}
+
+		if (!metadata.createdAt || !isValidISODate(metadata.createdAt)) {
+			throw new Error('Invalid createdAt timestamp in metadata');
+		}
+
+		const now = new Date().toISOString();
+		const createdDate = new Date(metadata.createdAt);
+		const updatedDate = new Date(now);
+
+		if (updatedDate < createdDate) {
+			throw new Error('updatedAt must be greater than or equal to createdAt');
+		}
+
+		return {
+			...metadata,
+			updatedAt: now
+		};
+	};
+
+	/**
+	 * Format date to human-readable string
+	 * @param {string} isoString - ISO 8601 date string
+	 * @returns {string} Formatted date string
+	 */
+	const formatDate = (isoString) => {
+		try {
+			const date = new Date(isoString);
+			const now = new Date();
+			const diffMs = now - date;
+			const diffMins = Math.floor(diffMs / 60000);
+			const diffHours = Math.floor(diffMs / 3600000);
+			const diffDays = Math.floor(diffMs / 86400000);
+
+			if (diffMins < 1) return 'just now';
+			if (diffMins < 60) return `${diffMins}m ago`;
+			if (diffHours < 24) return `${diffHours}h ago`;
+			if (diffDays < 7) return `${diffDays}d ago`;
+
+			return date.toLocaleDateString('en-US', { 
+				month: 'short', 
+				day: 'numeric', 
+				year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined 
+			});
+		} catch (e) {
+			return 'Invalid date';
+		}
+	};
+
+	// ===== END METADATA TRACKING SYSTEM =====
 	const form = document.getElementById('prompt-form');
 	const titleInput = document.getElementById('prompt-title');
+	const modelInput = document.getElementById('prompt-model');
 	const contentInput = document.getElementById('prompt-content');
 	const listEl = document.getElementById('prompt-list');
 	const emptyStateEl = document.getElementById('empty-state');
@@ -38,8 +181,16 @@
 			return;
 		}
 		emptyStateEl.hidden = true;
+		
+		// Sort by createdAt descending (newest first)
+		const sortedPrompts = [...prompts].sort((a, b) => {
+			const aDate = a.metadata?.createdAt || 0;
+			const bDate = b.metadata?.createdAt || 0;
+			return new Date(bDate) - new Date(aDate);
+		});
+		
 		const frag = document.createDocumentFragment();
-		prompts.forEach(p => {
+		sortedPrompts.forEach(p => {
 			// Backwards compatibility: ensure userRating field exists
 			if (typeof p.userRating !== 'number') p.userRating = 0;
 			// Ensure notes array exists
@@ -89,6 +240,73 @@
 			actions.appendChild(deleteBtn);
 			card.appendChild(title);
 			card.appendChild(preview);
+
+			// Metadata Section
+			if (p.metadata) {
+				const metadataSection = document.createElement('div');
+				metadataSection.className = 'metadata-section';
+
+				// Model row
+				const modelRow = document.createElement('div');
+				modelRow.className = 'metadata-row';
+				const modelLabel = document.createElement('span');
+				modelLabel.className = 'metadata-label';
+				modelLabel.textContent = 'Model:';
+				const modelValue = document.createElement('span');
+				modelValue.className = 'metadata-value metadata-model';
+				modelValue.textContent = p.metadata.model;
+				modelRow.appendChild(modelLabel);
+				modelRow.appendChild(modelValue);
+				metadataSection.appendChild(modelRow);
+
+				// Created/Updated row
+				const dateRow = document.createElement('div');
+				dateRow.className = 'metadata-row';
+				const dateLabel = document.createElement('span');
+				dateLabel.className = 'metadata-label';
+				dateLabel.textContent = 'Created:';
+				const dateValue = document.createElement('span');
+				dateValue.className = 'metadata-value metadata-date';
+				dateValue.textContent = formatDate(p.metadata.createdAt);
+				dateValue.title = new Date(p.metadata.createdAt).toLocaleString();
+				dateRow.appendChild(dateLabel);
+				dateRow.appendChild(dateValue);
+				
+				// Show updated if different from created
+				if (p.metadata.updatedAt && p.metadata.updatedAt !== p.metadata.createdAt) {
+					const updatedSpan = document.createElement('span');
+					updatedSpan.className = 'metadata-value metadata-date';
+					updatedSpan.textContent = ' (updated ' + formatDate(p.metadata.updatedAt) + ')';
+					updatedSpan.title = new Date(p.metadata.updatedAt).toLocaleString();
+					dateRow.appendChild(updatedSpan);
+				}
+				metadataSection.appendChild(dateRow);
+
+				// Token estimate row
+				if (p.metadata.tokenEstimate) {
+					const tokenRow = document.createElement('div');
+					tokenRow.className = 'metadata-row';
+					const tokenLabel = document.createElement('span');
+					tokenLabel.className = 'metadata-label';
+					tokenLabel.textContent = 'Tokens:';
+					const tokenEstimate = document.createElement('div');
+					tokenEstimate.className = 'token-estimate';
+					const tokenRange = document.createElement('span');
+					tokenRange.className = 'token-range';
+					tokenRange.textContent = `${p.metadata.tokenEstimate.min}-${p.metadata.tokenEstimate.max}`;
+					const confidenceBadge = document.createElement('span');
+					confidenceBadge.className = `confidence-badge confidence-${p.metadata.tokenEstimate.confidence}`;
+					confidenceBadge.textContent = p.metadata.tokenEstimate.confidence;
+					tokenEstimate.appendChild(tokenRange);
+					tokenEstimate.appendChild(confidenceBadge);
+					tokenRow.appendChild(tokenLabel);
+					tokenRow.appendChild(tokenEstimate);
+					metadataSection.appendChild(tokenRow);
+				}
+
+				card.appendChild(metadataSection);
+			}
+
 			card.appendChild(ratingWrap);
 
 			// Notes Section
@@ -153,9 +371,26 @@
 		listEl.appendChild(frag);
 	};
 
-	const addPrompt = (title, content) => {
+	const addPrompt = (title, content, modelName) => {
 		const prompts = getPrompts();
-		prompts.unshift({ id: Date.now(), title: title.trim(), content: content.trim(), userRating: 0 });
+		
+		// Create metadata for the prompt
+		let metadata = null;
+		try {
+			metadata = trackModel(modelName, content);
+		} catch (error) {
+			console.error('Failed to create metadata:', error);
+			alert('Error: ' + error.message);
+			return;
+		}
+		
+		prompts.unshift({ 
+			id: Date.now(), 
+			title: title.trim(), 
+			content: content.trim(), 
+			userRating: 0,
+			metadata: metadata
+		});
 		savePrompts(prompts);
 		renderPrompts();
 	};
@@ -171,12 +406,13 @@
 	form.addEventListener('submit', (e) => {
 		e.preventDefault();
 		const title = titleInput.value;
+		const model = modelInput.value;
 		const content = contentInput.value;
-		if (!title.trim() || !content.trim()) {
+		if (!title.trim() || !model.trim() || !content.trim()) {
 			// Basic validation, rely on required attributes but ensure early exit.
 			return;
 		}
-		addPrompt(title, content);
+		addPrompt(title, content, model);
 		form.reset();
 		titleInput.focus();
 	});
