@@ -41,6 +41,12 @@
 
 	<footer class="app-footer">
 		<small>Data persists locally in your browser via <code>localStorage</code>.</small>
+		<div class="import-export-row">
+			<button id="export-btn" class="primary-btn" type="button">Export Prompts</button>
+			<button id="import-btn" class="primary-btn" type="button">Import Prompts</button>
+			<input id="import-file" type="file" accept="application/json" style="display:none" />
+			<span id="import-status" class="import-status" aria-live="polite"></span>
+		</div>
 	</footer>
 	<script src="script.js" defer></script>
 </body>

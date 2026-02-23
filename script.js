@@ -575,5 +575,175 @@
 	};
 
 	// Initial render
+
+	// ===== EXPORT / IMPORT SYSTEM =====
+	const EXPORT_VERSION = '1.0.0';
+
+	const formatFilename = (prefix) => {
+		const ts = new Date().toISOString().replace(/[:.]/g, '-');
+		return `${prefix}-${ts}.json`;
+	};
+
+	const computeStats = (prompts) => {
+		const totalPrompts = prompts.length;
+		let ratingSum = 0;
+		let ratingCount = 0;
+		const modelCounts = Object.create(null);
+		prompts.forEach(p => {
+			if (typeof p.userRating === 'number') { ratingSum += p.userRating; ratingCount++; }
+			const m = p.metadata?.model || 'unknown';
+			modelCounts[m] = (modelCounts[m] || 0) + 1;
+		});
+		const averageRating = ratingCount ? +(ratingSum / ratingCount).toFixed(2) : 0;
+		let mostUsedModel = null;
+		let max = 0;
+		for (const k in modelCounts) {
+			if (modelCounts[k] > max) { max = modelCounts[k]; mostUsedModel = k; }
+		}
+		return { totalPrompts, averageRating, mostUsedModel };
+	};
+
+	const buildExportPayload = (prompts) => ({
+		version: EXPORT_VERSION,
+		exportedAt: new Date().toISOString(),
+		stats: computeStats(prompts),
+		prompts: prompts
+	});
+
+	const downloadJSON = (obj, filename) => {
+		const text = JSON.stringify(obj, null, 2);
+		const blob = new Blob([text], { type: 'application/json' });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = filename;
+		a.style.display = 'none';
+		document.body.appendChild(a);
+		a.click();
+		a.remove();
+		setTimeout(() => URL.revokeObjectURL(url), 5000);
+	};
+
+	const setImportStatus = (msg, isError = false) => {
+		const el = document.getElementById('import-status');
+		if (!el) return;
+		el.textContent = msg;
+		el.style.color = isError ? 'var(--danger)' : '';
+	};
+
+	const exportPrompts = () => {
+		const prompts = getPrompts();
+		const payload = buildExportPayload(prompts);
+		try {
+			downloadJSON(payload, formatFilename('prompts-export'));
+			setImportStatus('Export complete.');
+		} catch (err) {
+			console.error('Export failed', err);
+			setImportStatus('Export failed: ' + String(err), true);
+		}
+	};
+
+	const validateImportPayload = (data) => {
+		const errors = [];
+		if (!data || typeof data !== 'object') errors.push('Payload must be an object');
+		if (!data.version) errors.push('Missing version');
+		if (!data.exportedAt || isNaN(new Date(data.exportedAt).getTime())) errors.push('Invalid exportedAt timestamp');
+		if (!Array.isArray(data.prompts)) errors.push('Missing prompts array');
+		return { ok: errors.length === 0, errors };
+	};
+
+	const importPrompts = async (file) => {
+		if (!file) return;
+		setImportStatus('Reading file...');
+		const text = await file.text().catch(err => { throw new Error('Failed to read file: ' + err.message); });
+		let data;
+		try { data = JSON.parse(text); }
+		catch (e) { setImportStatus('Invalid JSON: ' + e.message, true); return; }
+
+		const v = validateImportPayload(data);
+		if (!v.ok) {
+			setImportStatus('Invalid export format: ' + v.errors.join('; '), true);
+			return;
+		}
+
+		// Ask user for global import mode
+		let mode = window.prompt("Import mode: type 'merge' to merge (keep existing), 'replace' to overwrite, or 'ask' to resolve per-duplicate.", 'merge');
+		mode = (mode || 'merge').toLowerCase();
+		if (!['merge','replace','ask'].includes(mode)) mode = 'merge';
+
+		// Backup existing data
+		const rawExisting = localStorage.getItem(STORAGE_KEY);
+		const backupKey = STORAGE_KEY + '.backup.' + Date.now();
+		try { localStorage.setItem(backupKey, rawExisting || '[]'); }
+		catch (e) { console.warn('Failed to write backup to localStorage', e); }
+
+		const existing = getPrompts();
+		const incoming = Array.isArray(data.prompts) ? data.prompts : [];
+
+		// Validate individual prompts minimally
+		for (const p of incoming) {
+			if (!p || (typeof p.id === 'undefined')) { setImportStatus('Invalid prompt object (missing id)', true); return; }
+		}
+
+		const existingMap = new Map(existing.map(p => [String(p.id), p]));
+		const result = [...existing];
+		try {
+			for (const p of incoming) {
+				const idKey = String(p.id);
+				if (existingMap.has(idKey)) {
+					if (mode === 'replace') {
+						// remove old then push new
+						const idx = result.findIndex(r => String(r.id) === idKey);
+						if (idx >= 0) result.splice(idx, 1, p);
+					} else if (mode === 'merge') {
+						// keep existing, skip incoming
+						continue;
+					} else if (mode === 'ask') {
+						const shouldReplace = window.confirm('Duplicate prompt id ' + idKey + " found. OK = replace existing, Cancel = keep existing.");
+						if (shouldReplace) {
+							const idx = result.findIndex(r => String(r.id) === idKey);
+							if (idx >= 0) result.splice(idx, 1, p);
+						}
+						// else skip
+					}
+				} else {
+					// no conflict
+					result.push(p);
+				}
+			}
+			// Final save
+			savePrompts(result);
+			setImportStatus('Import complete. Backup key: ' + backupKey);
+			renderPrompts();
+		} catch (err) {
+			console.error('Import failed, attempting rollback', err);
+			// Rollback
+			try {
+				if (rawExisting === null) localStorage.removeItem(STORAGE_KEY);
+				else localStorage.setItem(STORAGE_KEY, rawExisting);
+				setImportStatus('Import failed, rolled back to previous state.', true);
+			} catch (rbErr) {
+				console.error('Rollback failed', rbErr);
+				setImportStatus('Import failed and rollback failed: ' + rbErr.message, true);
+			}
+		}
+	};
+
+	// Wire UI
+	const attachImportExportUI = () => {
+		const exportBtn = document.getElementById('export-btn');
+		const importBtn = document.getElementById('import-btn');
+		const fileInput = document.getElementById('import-file');
+		if (exportBtn) exportBtn.addEventListener('click', exportPrompts);
+		if (importBtn && fileInput) importBtn.addEventListener('click', () => fileInput.click());
+		if (fileInput) fileInput.addEventListener('change', (e) => {
+			const f = fileInput.files && fileInput.files[0];
+			if (f) importPrompts(f);
+			fileInput.value = '';
+		});
+	};
+
+	attachImportExportUI();
+
 	document.addEventListener('DOMContentLoaded', renderPrompts);
 })();
